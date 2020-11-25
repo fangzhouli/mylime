@@ -3,12 +3,13 @@ Contains abstract functionality for learning locally linear sparse model.
 """
 import numpy as np
 import scipy as sp
-from sklearn.linear_model import Ridge, lars_path
+from sklearn.linear_model import LogisticRegression, Ridge, lars_path
 from sklearn.utils import check_random_state
 
 
 class LimeBase(object):
     """Class for learning a locally linear sparse model from perturbed data"""
+
     def __init__(self,
                  kernel_fn,
                  verbose=False,
@@ -48,7 +49,8 @@ class LimeBase(object):
 
     def forward_selection(self, data, labels, weights, num_features):
         """Iteratively adds features to the model"""
-        clf = Ridge(alpha=0, fit_intercept=True, random_state=self.random_state)
+        clf = Ridge(alpha=0, fit_intercept=True,
+                    random_state=self.random_state)
         used_features = []
         for _ in range(min(num_features, data.shape[1])):
             max_ = -100000000
@@ -92,7 +94,8 @@ class LimeBase(object):
                     nnz_indexes = argsort_data[::-1]
                     indices = weighted_data.indices[nnz_indexes]
                     num_to_pad = num_features - sdata
-                    indices = np.concatenate((indices, np.zeros(num_to_pad, dtype=indices.dtype)))
+                    indices = np.concatenate(
+                        (indices, np.zeros(num_to_pad, dtype=indices.dtype)))
                     indices_set = set(indices)
                     pad_counter = 0
                     for i in range(data.shape[1]):
@@ -102,7 +105,8 @@ class LimeBase(object):
                             if pad_counter >= num_to_pad:
                                 break
                 else:
-                    nnz_indexes = argsort_data[sdata - num_features:sdata][::-1]
+                    nnz_indexes = argsort_data[sdata -
+                                               num_features:sdata][::-1]
                     indices = weighted_data.indices[nnz_indexes]
                 return indices
             else:
@@ -175,32 +179,47 @@ class LimeBase(object):
             to the feature id (x) and the local weight (y). The list is sorted
             by decreasing absolute value of y.
             score is the R^2 value of the returned explanation
-            local_pred is the prediction of the explanation model on the original instance
+            local_pred is the prediction of the explanation model on the
+            original instance
+
         """
+        if model_regressor is None or model_regressor == 'linear':
+            model_regressor = Ridge(alpha=1, fit_intercept=True,
+                                    random_state=self.random_state)
+            labels_column = neighborhood_labels[:, label]
+        elif model_regressor == 'logistic':
+            model_regressor = LogisticRegression(
+                fit_intercept=True,
+                random_state=self.random_state)
+            labels_column = np.array(
+                [1 if val > 0.5 else 0
+                 for val in neighborhood_labels[:, label]])
+        elif model_regressor == 'tree':
+            pass
 
         weights = self.kernel_fn(distances)
-        labels_column = neighborhood_labels[:, label]
         used_features = self.feature_selection(neighborhood_data,
                                                labels_column,
                                                weights,
                                                num_features,
                                                feature_selection)
-        if model_regressor is None:
-            model_regressor = Ridge(alpha=1, fit_intercept=True,
-                                    random_state=self.random_state)
         easy_model = model_regressor
         easy_model.fit(neighborhood_data[:, used_features],
                        labels_column, sample_weight=weights)
+
         prediction_score = easy_model.score(
             neighborhood_data[:, used_features],
             labels_column, sample_weight=weights)
 
-        local_pred = easy_model.predict(neighborhood_data[0, used_features].reshape(1, -1))
+        local_pred = easy_model.predict(
+            neighborhood_data[0, used_features].reshape(1, -1))
 
         if self.verbose:
             print('Intercept', easy_model.intercept_)
             print('Prediction_local', local_pred,)
             print('Right:', neighborhood_labels[0, label])
+        if easy_model.coef_.shape == (1, 2):
+            easy_model.coef_ = easy_model.coef_[0]
         return (easy_model.intercept_,
                 sorted(zip(used_features, easy_model.coef_),
                        key=lambda x: np.abs(x[1]), reverse=True),

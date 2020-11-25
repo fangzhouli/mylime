@@ -16,7 +16,7 @@ from . import lime_base
 from .wrappers.scikit_image import SegmentationAlgorithm
 
 
-class ImageExplanation(object):
+class ImageExplanationLogistic(object):
     def __init__(self, image, segments):
         """Init function.
 
@@ -30,7 +30,8 @@ class ImageExplanation(object):
         self.local_exp = {}
         self.local_pred = None
 
-    def get_image_and_mask(self, label, positive_only=True, negative_only=False, hide_rest=False,
+    def get_image_and_mask(self, label, positive_only=True,
+                           negative_only=False, hide_rest=False,
                            num_features=5, min_weight=0.):
         """Init function.
 
@@ -55,10 +56,85 @@ class ImageExplanation(object):
         if label not in self.local_exp:
             raise KeyError('Label not in explanation')
         if positive_only & negative_only:
-            raise ValueError("Positive_only and negative_only cannot be true at the same time.")
+            raise ValueError(
+                "Positive_only and negative_only cannot be true at the same time.")
         segments = self.segments
         image = self.image
         exp = self.local_exp[label]
+        print(exp)
+        mask = np.zeros(segments.shape, segments.dtype)
+        if hide_rest:
+            temp = np.zeros(self.image.shape)
+        else:
+            temp = self.image.copy()
+        if positive_only:
+            fs = [x[0] for x in exp
+                  if x[1] > 0 and x[1] > min_weight][:num_features]
+        if negative_only:
+            fs = [x[0] for x in exp
+                  if x[1] < 0 and abs(x[1]) > min_weight][:num_features]
+        if positive_only or negative_only:
+            for f in fs:
+                temp[segments == f] = image[segments == f].copy()
+                mask[segments == f] = 1
+            return temp, mask
+        else:
+            for f, w in exp[:num_features]:
+                if np.abs(w) < min_weight:
+                    continue
+                c = 0 if w < 0 else 1
+                mask[segments == f] = -1 if w < 0 else 1
+                temp[segments == f] = image[segments == f].copy()
+                temp[segments == f, c] = np.max(image)
+            return temp, mask
+
+
+class ImageExplanationLinear(object):
+    def __init__(self, image, segments):
+        """Init function.
+
+        Args:
+            image: 3d numpy array
+            segments: 2d numpy array, with the output from skimage.segmentation
+        """
+        self.image = image
+        self.segments = segments
+        self.intercept = {}
+        self.local_exp = {}
+        self.local_pred = None
+
+    def get_image_and_mask(self, label, positive_only=True,
+                           negative_only=False, hide_rest=False,
+                           num_features=5, min_weight=0.):
+        """Init function.
+
+        Args:
+            label: label to explain
+            positive_only: if True, only take superpixels that positively contribute to
+                the prediction of the label.
+            negative_only: if True, only take superpixels that negatively contribute to
+                the prediction of the label. If false, and so is positive_only, then both
+                negativey and positively contributions will be taken.
+                Both can't be True at the same time
+            hide_rest: if True, make the non-explanation part of the return
+                image gray
+            num_features: number of superpixels to include in explanation
+            min_weight: minimum weight of the superpixels to include in explanation
+
+        Returns:
+            (image, mask), where image is a 3d numpy array and mask is a 2d
+            numpy array that can be used with
+            skimage.segmentation.mark_boundaries
+        """
+        if label not in self.local_exp:
+            raise KeyError('Label not in explanation')
+        if positive_only & negative_only:
+            raise ValueError(
+                "Positive_only and negative_only cannot be true at the same time.")
+        segments = self.segments
+        image = self.image
+        exp = self.local_exp[label]
+        print(exp)
         mask = np.zeros(segments.shape, segments.dtype)
         if hide_rest:
             temp = np.zeros(self.image.shape)
@@ -88,12 +164,15 @@ class ImageExplanation(object):
 
 class LimeImageExplainer(object):
     """Explains predictions on Image (i.e. matrix) data.
+
     For numerical features, perturb them by sampling from a Normal(0,1) and
     doing the inverse operation of mean-centering and scaling, according to the
     means and stds in the training data. For categorical features, perturb by
     sampling according to the training distribution, and making a binary
     feature that is 1 when the value is the same as the instance being
-    explained."""
+    explained.
+
+    """
 
     def __init__(self, kernel_width=.25, kernel=None, verbose=False,
                  feature_selection='auto', random_state=None):
@@ -103,8 +182,8 @@ class LimeImageExplainer(object):
             kernel_width: kernel width for the exponential kernel.
             If None, defaults to sqrt(number of columns) * 0.75.
             kernel: similarity kernel that takes euclidean distances and kernel
-                width as input and outputs weights in (0,1). If None, defaults to
-                an exponential kernel.
+                width as input and outputs weights in (0,1). If None, defaults
+                to an exponential kernel.
             verbose: if true, print local prediction values from linear model
             feature_selection: feature selection method. can be
                 'forward_selection', 'lasso_path', 'none' or 'auto'.
@@ -113,6 +192,7 @@ class LimeImageExplainer(object):
             random_state: an integer or numpy.RandomState that will be used to
                 generate random numbers. If None, the random state will be
                 initialized using the internal numpy seed.
+
         """
         kernel_width = float(kernel_width)
 
@@ -124,7 +204,8 @@ class LimeImageExplainer(object):
 
         self.random_state = check_random_state(random_state)
         self.feature_selection = feature_selection
-        self.base = lime_base.LimeBase(kernel_fn, verbose, random_state=self.random_state)
+        self.base = lime_base.LimeBase(
+            kernel_fn, verbose, random_state=self.random_state)
 
     def explain_instance(self, image, classifier_fn, labels=(1,),
                          hide_color=None,
@@ -168,8 +249,9 @@ class LimeImageExplainer(object):
             progress_bar: if True, show tqdm progress bar.
 
         Returns:
-            An ImageExplanation object (see lime_image.py) with the corresponding
-            explanations.
+            An ImageExplanation object (see lime_image.py) with the
+                corresponding explanations.
+
         """
         if len(image.shape) == 2:
             image = gray2rgb(image)
@@ -177,9 +259,9 @@ class LimeImageExplainer(object):
             random_seed = self.random_state.randint(0, high=1000)
 
         if segmentation_fn is None:
-            segmentation_fn = SegmentationAlgorithm('quickshift', kernel_size=4,
-                                                    max_dist=200, ratio=0.2,
-                                                    random_seed=random_seed)
+            segmentation_fn = SegmentationAlgorithm(
+                'quickshift', kernel_size=4, max_dist=200, ratio=0.2,
+                random_seed=random_seed)
         try:
             segments = segmentation_fn(image)
         except ValueError as e:
@@ -208,7 +290,13 @@ class LimeImageExplainer(object):
             metric=distance_metric
         ).ravel()
 
-        ret_exp = ImageExplanation(image, segments)
+        if model_regressor == 'linear' or model_regressor is None:
+            ret_exp = ImageExplanationLinear(image, segments)
+        elif model_regressor == 'logistic':
+            ret_exp = ImageExplanationLogistic(image, segments)
+        elif model_regressor == 'tree':
+            # ret_exp = ImageExplanationTree(image, segments)
+            pass
         if top_labels:
             top = np.argsort(labels[0])[-top_labels:]
             ret_exp.top_labels = list(top)
@@ -216,7 +304,8 @@ class LimeImageExplainer(object):
         for label in top:
             (ret_exp.intercept[label],
              ret_exp.local_exp[label],
-             ret_exp.score, ret_exp.local_pred) = self.base.explain_instance_with_data(
+             ret_exp.score,
+             ret_exp.local_pred) = self.base.explain_instance_with_data(
                 data, labels, distances, label, num_features,
                 model_regressor=model_regressor,
                 feature_selection=self.feature_selection)
@@ -247,6 +336,7 @@ class LimeImageExplainer(object):
             A tuple (data, labels), where:
                 data: dense num_samples * num_superpixels
                 labels: prediction probabilities matrix
+
         """
         n_features = np.unique(segments).shape[0]
         data = self.random_state.randint(0, 2, num_samples * n_features)\
