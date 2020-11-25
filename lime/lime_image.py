@@ -61,7 +61,6 @@ class ImageExplanationLogistic(object):
         segments = self.segments
         image = self.image
         exp = self.local_exp[label]
-        print(exp)
         mask = np.zeros(segments.shape, segments.dtype)
         if hide_rest:
             temp = np.zeros(self.image.shape)
@@ -134,7 +133,6 @@ class ImageExplanationLinear(object):
         segments = self.segments
         image = self.image
         exp = self.local_exp[label]
-        print(exp)
         mask = np.zeros(segments.shape, segments.dtype)
         if hide_rest:
             temp = np.zeros(self.image.shape)

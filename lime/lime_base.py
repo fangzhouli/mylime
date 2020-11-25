@@ -194,6 +194,7 @@ class LimeBase(object):
             labels_column = np.array(
                 [1 if val > 0.5 else 0
                  for val in neighborhood_labels[:, label]])
+            labels_column[0] = 1
         elif model_regressor == 'tree':
             pass
 
@@ -203,6 +204,7 @@ class LimeBase(object):
                                                weights,
                                                num_features,
                                                feature_selection)
+        # print(neighborhood_data[:, used_features])
         easy_model = model_regressor
         easy_model.fit(neighborhood_data[:, used_features],
                        labels_column, sample_weight=weights)
@@ -218,7 +220,7 @@ class LimeBase(object):
             print('Intercept', easy_model.intercept_)
             print('Prediction_local', local_pred,)
             print('Right:', neighborhood_labels[0, label])
-        if easy_model.coef_.shape == (1, 2):
+        if len(easy_model.coef_.shape) == 2:
             easy_model.coef_ = easy_model.coef_[0]
         return (easy_model.intercept_,
                 sorted(zip(used_features, easy_model.coef_),
