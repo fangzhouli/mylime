@@ -15,6 +15,77 @@ from tqdm.auto import tqdm
 from . import lime_base
 from .wrappers.scikit_image import SegmentationAlgorithm
 
+class ImageExplanationTree(object):
+    def __init__(self, image, segments):
+        """Init function.
+
+        Args:
+            image: 3d numpy array
+            segments: 2d numpy array, with the output from skimage.segmentation
+        """
+        self.image = image
+        self.segments = segments
+        self.intercept = {}
+        self.local_exp = {}
+        self.local_pred = None
+
+    def get_image_and_mask(self, label, positive_only=True,
+                           negative_only=False, hide_rest=False,
+                           num_features=5, min_weight=0.):
+        """Init function.
+
+        Args:
+            label: label to explain
+            positive_only: if True, only take superpixels that positively contribute to
+                the prediction of the label.
+            negative_only: if True, only take superpixels that negatively contribute to
+                the prediction of the label. If false, and so is positive_only, then both
+                negativey and positively contributions will be taken.
+                Both can't be True at the same time
+            hide_rest: if True, make the non-explanation part of the return
+                image gray
+            num_features: number of superpixels to include in explanation
+            min_weight: minimum weight of the superpixels to include in explanation
+
+        Returns:
+            (image, mask), where image is a 3d numpy array and mask is a 2d
+            numpy array that can be used with
+            skimage.segmentation.mark_boundaries
+        """
+        if label not in self.local_exp:
+            raise KeyError('Label not in explanation')
+        if positive_only & negative_only:
+            raise ValueError(
+                "Positive_only and negative_only cannot be true at the same time.")
+        segments = self.segments
+        image = self.image
+        exp = self.local_exp[label]
+        mask = np.zeros(segments.shape, segments.dtype)
+        if hide_rest:
+            temp = np.zeros(self.image.shape)
+        else:
+            temp = self.image.copy()
+        if positive_only:
+            fs = [x[0] for x in exp
+                  if x[1] > 0 and x[1] > min_weight][:num_features]
+        if negative_only:
+            fs = [x[0] for x in exp
+                  if x[1] < 0 and abs(x[1]) > min_weight][:num_features]
+        if positive_only or negative_only:
+            for f in fs:
+                temp[segments == f] = image[segments == f].copy()
+                mask[segments == f] = 1
+            return temp, mask
+        else:
+            for f, w in exp[:num_features]:
+                if np.abs(w) < min_weight:
+                    continue
+                c = 0 if w < 0 else 1
+                mask[segments == f] = -1 if w < 0 else 1
+                temp[segments == f] = image[segments == f].copy()
+                temp[segments == f, c] = np.max(image)
+            return temp, mask
+
 
 class ImageExplanationLogistic(object):
     def __init__(self, image, segments):
@@ -293,7 +364,7 @@ class LimeImageExplainer(object):
         elif model_regressor == 'logistic':
             ret_exp = ImageExplanationLogistic(image, segments)
         elif model_regressor == 'tree':
-            # ret_exp = ImageExplanationTree(image, segments)
+            ret_exp = ImageExplanationTree(image, segments)
             pass
         if top_labels:
             top = np.argsort(labels[0])[-top_labels:]
