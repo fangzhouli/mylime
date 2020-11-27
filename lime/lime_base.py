@@ -4,6 +4,7 @@ Contains abstract functionality for learning locally linear sparse model.
 import numpy as np
 import scipy as sp
 from sklearn.linear_model import LogisticRegression, Ridge, lars_path
+from sklearn.tree import DecisionTreeRegressor
 from sklearn.utils import check_random_state
 
 
@@ -184,10 +185,12 @@ class LimeBase(object):
 
         """
         if model_regressor is None or model_regressor == 'linear':
+            model_regressor_record = 'linear'
             model_regressor = Ridge(alpha=1, fit_intercept=True,
                                     random_state=self.random_state)
             labels_column = neighborhood_labels[:, label]
         elif model_regressor == 'logistic':
+            model_regressor_record = 'logistic'
             model_regressor = LogisticRegression(
                 fit_intercept=True,
                 random_state=self.random_state)
@@ -196,7 +199,9 @@ class LimeBase(object):
                  for val in neighborhood_labels[:, label]])
             labels_column[0] = 1
         elif model_regressor == 'tree':
-            pass
+            model_regressor_record = 'tree'
+            model_regressor = DecisionTreeRegressor()
+            labels_column = neighborhood_labels[:, label]
 
         weights = self.kernel_fn(distances)
         used_features = self.feature_selection(neighborhood_data,
@@ -216,13 +221,21 @@ class LimeBase(object):
         local_pred = easy_model.predict(
             neighborhood_data[0, used_features].reshape(1, -1))
 
+        print(model_regressor)
+        if model_regressor_record == 'tree':
+            easy_model_intercept_ = None
+            easy_model_coef_ = easy_model.feature_importances_
+        else:
+            easy_model_intercept_ = easy_model.intercept_
+            easy_model_coef_ = easy_model.coef_
+
         if self.verbose:
-            print('Intercept', easy_model.intercept_)
+            print('Intercept', easy_model_intercept_)
             print('Prediction_local', local_pred,)
             print('Right:', neighborhood_labels[0, label])
-        if len(easy_model.coef_.shape) == 2:
-            easy_model.coef_ = easy_model.coef_[0]
-        return (easy_model.intercept_,
-                sorted(zip(used_features, easy_model.coef_),
+        if len(easy_model_coef_.shape) == 2:
+            easy_model_coef_ = easy_model.coef_[0]
+        return (easy_model_intercept_,
+                sorted(zip(used_features, easy_model_coef_),
                        key=lambda x: np.abs(x[1]), reverse=True),
                 prediction_score, local_pred)
