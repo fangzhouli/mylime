@@ -412,6 +412,8 @@ class LimeImageExplainer(object):
             .reshape((num_samples, n_features))
         labels = []
         data[0, :] = 1
+        if len(data) > 1:
+            data[-1, :] = 0
         imgs = []
         rows = tqdm(data) if progress_bar else data
         for row in rows:

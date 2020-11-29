@@ -198,6 +198,8 @@ class LimeBase(object):
                 [1 if val > 0.5 else 0
                  for val in neighborhood_labels[:, label]])
             labels_column[0] = 1
+            if len(labels_column) > 1:
+                labels_column[-1] = 0
         elif model_regressor == 'tree':
             model_regressor_record = 'tree'
             model_regressor = DecisionTreeRegressor()
@@ -221,7 +223,6 @@ class LimeBase(object):
         local_pred = easy_model.predict(
             neighborhood_data[0, used_features].reshape(1, -1))
 
-        print(model_regressor)
         if model_regressor_record == 'tree':
             easy_model_intercept_ = None
             easy_model_coef_ = easy_model.feature_importances_
